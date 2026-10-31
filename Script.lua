@@ -1,21 +1,35 @@
--- SELF-CONTAINED ALTERNATIVE — no hosting needed
--- wrap the entire script in a pcall for clean error handling
+-- Lua 5.1 | Arceus X Neo mobile fix
+-- raw: https://raw.githubusercontent.com/lariosajhonharold-cpu/Aim/main/Script.lua
 
 local ok, err = pcall(function()
 
--- ╔══════════════════════════════════════════╗
--- ║  PASTE THE FULL SCRIPT HERE — START      ║
--- ╚══════════════════════════════════════════╝
+local Players          = game:GetService("Players")
+local RunService       = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService     = game:GetService("TweenService")
 
-local Players           = game:GetService("Players")
-local RunService        = game:GetService("RunService")
-local UserInputService  = game:GetService("UserInputService")
-local TweenService      = game:GetService("TweenService")
-local Camera            = workspace.CurrentCamera
+-- ── arceus x neo safe gui parent ─────────────────────────────
+local function getGui()
+    if gethui then return gethui() end
+    if syn and syn.protect_gui then return game:GetService("CoreGui") end
+    local ok2, cg = pcall(function()
+        return game:GetService("CoreGui")
+    end)
+    return ok2 and cg or game:GetService("Players").LocalPlayer
+        :WaitForChild("PlayerGui")
+end
+local GUI_PARENT = getGui()
 
+-- ── wait for camera + character ──────────────────────────────
+local Camera = workspace.CurrentCamera
 local lp     = Players.LocalPlayer
+
+-- wait until viewport is real
+repeat task.wait() until Camera.ViewportSize.X > 0
+
 local lpChar = lp.Character or lp.CharacterAdded:Wait()
 
+-- ── config ───────────────────────────────────────────────────
 local CFG = {
     AimAssist    = true,
     ESP          = true,
@@ -27,6 +41,7 @@ local CFG = {
     ESP_NameColor= Color3.fromRGB(220, 160, 255),
 }
 
+-- ── util ─────────────────────────────────────────────────────
 local function isEnemy(char)
     if not char then return false end
     local p = Players:GetPlayerFromCharacter(char)
@@ -50,9 +65,11 @@ local function vCenter()
     return Vector2.new(v.X * 0.5, v.Y * 0.5)
 end
 
+-- ── ESP ──────────────────────────────────────────────────────
 local espRoot = Instance.new("Folder")
 espRoot.Name   = "_esp"
-espRoot.Parent = game:GetService("CoreGui")
+espRoot.Parent = GUI_PARENT
+
 local espMap = {}
 
 local function buildESP(player)
@@ -61,6 +78,7 @@ local function buildESP(player)
     bb.StudsOffset = Vector3.new(0, 3.2, 0)
     bb.AlwaysOnTop = true
     bb.Enabled     = false
+    bb.RobloxLocked = true
 
     local box = Instance.new("Frame", bb)
     box.Size = UDim2.new(1,0,1,0)
@@ -100,13 +118,13 @@ local function buildESP(player)
     espMap[player] = { gui = bb, fill = hf }
 
     local function attachChar(char)
-        task.wait(0.4)
+        task.wait(0.5)
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if hrp then bb.Adornee = hrp end
     end
     player.CharacterAdded:Connect(attachChar)
     if player.Character then attachChar(player.Character) end
-    bb.Parent = espRoot
+    bb.Parent = GUI_PARENT
 end
 
 for _, p in ipairs(Players:GetPlayers()) do
@@ -114,26 +132,38 @@ for _, p in ipairs(Players:GetPlayers()) do
 end
 Players.PlayerAdded:Connect(function(p) buildESP(p) end)
 Players.PlayerRemoving:Connect(function(p)
-    if espMap[p] then espMap[p].gui:Destroy(); espMap[p] = nil end
+    if espMap[p] then
+        espMap[p].gui:Destroy()
+        espMap[p] = nil
+    end
 end)
 
+-- ── FOV ring ─────────────────────────────────────────────────
 local fovSG = Instance.new("ScreenGui")
-fovSG.Name = "_fov"; fovSG.ResetOnSpawn = false
-fovSG.Parent = game:GetService("CoreGui")
+fovSG.Name            = "_fov"
+fovSG.ResetOnSpawn    = false
+fovSG.DisplayOrder    = 998
+fovSG.IgnoreGuiInset  = true
+fovSG.Parent          = GUI_PARENT
 
 local ring = Instance.new("Frame", fovSG)
 ring.BackgroundTransparency = 1
 ring.BorderSizePixel = 0
+Instance.new("UICorner", ring).CornerRadius = UDim.new(1,0)
 local rs = Instance.new("UIStroke", ring)
 rs.Color = Color3.fromRGB(170,60,255); rs.Thickness = 1.2
-Instance.new("UICorner", ring).CornerRadius = UDim.new(1,0)
 
-local aimHeld    = false
-local aimZoneSG  = Instance.new("ScreenGui")
-aimZoneSG.Name   = "_aimzone"; aimZoneSG.ResetOnSpawn = false
-aimZoneSG.Parent = game:GetService("CoreGui")
+-- ── aim zone ─────────────────────────────────────────────────
+local aimHeld   = false
 
-local aimZone = Instance.new("TextButton", aimZoneSG)
+local aimSG = Instance.new("ScreenGui")
+aimSG.Name           = "_aimzone"
+aimSG.ResetOnSpawn   = false
+aimSG.DisplayOrder   = 1
+aimSG.IgnoreGuiInset = true
+aimSG.Parent         = GUI_PARENT
+
+local aimZone = Instance.new("TextButton", aimSG)
 aimZone.Size = UDim2.new(0.4, 0, 0.6, 0)
 aimZone.Position = UDim2.new(0.6, 0, 0.2, 0)
 aimZone.BackgroundTransparency = 1
@@ -142,6 +172,7 @@ aimZone.ZIndex = 1
 aimZone.TouchStarted:Connect(function() aimHeld = true end)
 aimZone.TouchEnded:Connect(function() aimHeld = false end)
 
+-- ── main loop ────────────────────────────────────────────────
 RunService.RenderStepped:Connect(function()
     lpChar = lp.Character
     local cv  = Camera.ViewportSize
@@ -180,50 +211,54 @@ RunService.RenderStepped:Connect(function()
     if CFG.AimAssist and aimHeld and target then
         local s2d, vis = W2S(target.Position)
         if vis then
-            local delta  = s2d - ctr
-            local move   = delta * CFG.AimSmooth
-            local dist   = (Camera.CFrame.Position - target.Position).Magnitude
-            local unitsPerPx = (2 * math.tan(
+            local delta = s2d - ctr
+            local move  = delta * CFG.AimSmooth
+            local dist  = (Camera.CFrame.Position - target.Position).Magnitude
+            local upp   = (2 * math.tan(
                 math.rad(Camera.FieldOfView * 0.5)) * dist) / cv.Y
-            local offset = Vector3.new(
-                -move.X * unitsPerPx, move.Y * unitsPerPx, 0)
-            Camera.CFrame = Camera.CFrame * CFrame.new(offset)
+            Camera.CFrame = Camera.CFrame *
+                CFrame.new(Vector3.new(-move.X * upp, move.Y * upp, 0))
         end
     end
 end)
 
+-- ── screen gui ───────────────────────────────────────────────
 local sg = Instance.new("ScreenGui")
-sg.Name = "ollie_ui"; sg.ResetOnSpawn = false
+sg.Name           = "ollie_ui"
+sg.ResetOnSpawn   = false
 sg.IgnoreGuiInset = true
-sg.Parent = game:GetService("CoreGui")
-
-local toggleBtn = Instance.new("TextButton", sg)
-toggleBtn.Size             = UDim2.new(0, 52, 0, 52)
-toggleBtn.Position         = UDim2.new(0, 14, 0, 48)
-toggleBtn.BackgroundColor3 = Color3.fromRGB(90, 0, 170)
-toggleBtn.Text             = "⚡"
-toggleBtn.TextSize         = 22
-toggleBtn.TextColor3       = Color3.fromRGB(230, 180, 255)
-toggleBtn.Font             = Enum.Font.GothamBold
-toggleBtn.BorderSizePixel  = 0
-toggleBtn.ZIndex           = 20
-Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(1, 0)
-local ts2 = Instance.new("UIStroke", toggleBtn)
-ts2.Color = Color3.fromRGB(180, 80, 255); ts2.Thickness = 1.5
+sg.DisplayOrder   = 999          -- on top of everything
+sg.Parent         = GUI_PARENT
 
 local cv0    = Camera.ViewportSize
 local panelW = math.min(cv0.X - 28, 310)
-local panelH = 420
+local panelH = 430
 
+-- toggle button — pushed down 90px so it clears roblox topbar
+local toggleBtn = Instance.new("TextButton", sg)
+toggleBtn.Size             = UDim2.new(0, 58, 0, 58)
+toggleBtn.Position         = UDim2.new(0, 16, 0, 90)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(90, 0, 170)
+toggleBtn.Text             = "⚡"
+toggleBtn.TextSize         = 24
+toggleBtn.TextColor3       = Color3.fromRGB(230, 180, 255)
+toggleBtn.Font             = Enum.Font.GothamBold
+toggleBtn.BorderSizePixel  = 0
+toggleBtn.ZIndex           = 50
+Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(1, 0)
+local tStroke = Instance.new("UIStroke", toggleBtn)
+tStroke.Color = Color3.fromRGB(180, 80, 255); tStroke.Thickness = 2
+
+-- panel
 local win = Instance.new("Frame", sg)
 win.Name             = "Panel"
 win.Size             = UDim2.new(0, panelW, 0, panelH)
-win.Position         = UDim2.new(0, 14, 0, 110)
+win.Position         = UDim2.new(0, 16, 0, 158)
 win.BackgroundColor3 = Color3.fromRGB(10, 0, 22)
 win.BackgroundTransparency = 0.06
 win.BorderSizePixel  = 0
 win.Visible          = false
-win.ZIndex           = 10
+win.ZIndex           = 40
 Instance.new("UICorner", win).CornerRadius = UDim.new(0, 16)
 local ws = Instance.new("UIStroke", win)
 ws.Color = Color3.fromRGB(140, 40, 220); ws.Thickness = 1.8
@@ -234,7 +269,7 @@ bgImg.Image              = CFG.PanelImage
 bgImg.ImageTransparency  = 0.45
 bgImg.BackgroundTransparency = 1
 bgImg.ScaleType          = Enum.ScaleType.Crop
-bgImg.ZIndex             = 11
+bgImg.ZIndex             = 41
 Instance.new("UICorner", bgImg).CornerRadius = UDim.new(0, 16)
 
 local veil = Instance.new("Frame", win)
@@ -242,7 +277,7 @@ veil.Size = UDim2.new(1,0,1,0)
 veil.BackgroundColor3 = Color3.fromRGB(20, 0, 45)
 veil.BackgroundTransparency = 0.35
 veil.BorderSizePixel = 0
-veil.ZIndex = 12
+veil.ZIndex = 42
 Instance.new("UICorner", veil).CornerRadius = UDim.new(0, 16)
 local vg = Instance.new("UIGradient", veil)
 vg.Color = ColorSequence.new{
@@ -261,7 +296,7 @@ hdr.Size = UDim2.new(1,0,0,50)
 hdr.BackgroundColor3 = Color3.fromRGB(80, 0, 155)
 hdr.BackgroundTransparency = 0.25
 hdr.BorderSizePixel = 0
-hdr.ZIndex = 13
+hdr.ZIndex = 43
 Instance.new("UICorner", hdr).CornerRadius = UDim.new(0, 16)
 
 local hdrLbl = Instance.new("TextLabel", hdr)
@@ -273,7 +308,7 @@ hdrLbl.TextColor3 = Color3.fromRGB(225, 165, 255)
 hdrLbl.Font = Enum.Font.GothamBold
 hdrLbl.TextSize = 17
 hdrLbl.TextXAlignment = Enum.TextXAlignment.Left
-hdrLbl.ZIndex = 14
+hdrLbl.ZIndex = 44
 
 local sub = Instance.new("TextLabel", win)
 sub.Text = "absolute ollie  •  built by olivia"
@@ -283,26 +318,26 @@ sub.BackgroundTransparency = 1
 sub.TextColor3 = Color3.fromRGB(130, 70, 195)
 sub.Font = Enum.Font.Gotham
 sub.TextSize = 11
-sub.ZIndex = 13
+sub.ZIndex = 43
 
+-- drag
 do
-    local dragging = false
-    local dragStart, startPos
+    local dragging, dragStart, startPos = false, nil, nil
     win.InputBegan:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.Touch then
-            dragging  = true
+            dragging = true
             dragStart = i.Position
             startPos  = win.Position
         end
     end)
     win.InputChanged:Connect(function(i)
         if dragging and i.UserInputType == Enum.UserInputType.Touch then
-            local delta = i.Position - dragStart
+            local d = i.Position - dragStart
             win.Position = UDim2.new(
                 startPos.X.Scale,
-                math.clamp(startPos.X.Offset + delta.X, 0, cv0.X - panelW),
+                math.clamp(startPos.X.Offset + d.X, 0, cv0.X - panelW),
                 startPos.Y.Scale,
-                math.clamp(startPos.Y.Offset + delta.Y, 50, cv0.Y - panelH)
+                math.clamp(startPos.Y.Offset + d.Y, 80, cv0.Y - panelH)
             )
         end
     end)
@@ -311,6 +346,7 @@ do
     end)
 end
 
+-- open/close
 local panelOpen = false
 toggleBtn.Activated:Connect(function()
     panelOpen = not panelOpen
@@ -322,6 +358,7 @@ toggleBtn.Activated:Connect(function()
     }):Play()
 end)
 
+-- row factory
 local rowY = 76
 local function makeRow(label, key)
     local row = Instance.new("Frame", win)
@@ -330,8 +367,8 @@ local function makeRow(label, key)
     row.BackgroundColor3 = Color3.fromRGB(30, 0, 58)
     row.BackgroundTransparency = 0.18
     row.BorderSizePixel = 0
-    row.ZIndex = 13
-    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 12)
+    row.ZIndex = 43
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0,12)
     local rs2 = Instance.new("UIStroke", row)
     rs2.Color = Color3.fromRGB(110, 35, 190); rs2.Thickness = 1
 
@@ -344,20 +381,18 @@ local function makeRow(label, key)
     lbl.Font = Enum.Font.GothamSemibold
     lbl.TextSize = 15
     lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.ZIndex = 14
+    lbl.ZIndex = 44
 
     local pill = Instance.new("Frame", row)
     pill.Size = UDim2.new(0,52,0,28)
     pill.Position = UDim2.new(1,-62,0.5,-14)
-    pill.BorderSizePixel = 0
-    pill.ZIndex = 14
+    pill.BorderSizePixel = 0; pill.ZIndex = 44
     Instance.new("UICorner", pill).CornerRadius = UDim.new(1,0)
 
     local knob = Instance.new("Frame", pill)
     knob.Size = UDim2.new(0,22,0,22)
     knob.AnchorPoint = Vector2.new(0.5,0.5)
-    knob.BorderSizePixel = 0
-    knob.ZIndex = 15
+    knob.BorderSizePixel = 0; knob.ZIndex = 45
     Instance.new("UICorner", knob).CornerRadius = UDim.new(1,0)
 
     local function refresh()
@@ -379,7 +414,7 @@ local function makeRow(label, key)
     local btn = Instance.new("TextButton", row)
     btn.Size = UDim2.new(1,0,1,0)
     btn.BackgroundTransparency = 1
-    btn.Text = ""; btn.ZIndex = 16
+    btn.Text = ""; btn.ZIndex = 46
     btn.Activated:Connect(function()
         CFG[key] = not CFG[key]; refresh()
         TweenService:Create(row, TweenInfo.new(0.08), {
@@ -397,6 +432,7 @@ end
 makeRow("🎯  Aim Assist", "AimAssist")
 makeRow("👁️  Enemy ESP",  "ESP")
 
+-- FOV slider
 local fovLbl = Instance.new("TextLabel", win)
 fovLbl.Text = "Aim FOV  •  " .. CFG.AimFOV
 fovLbl.Size = UDim2.new(1,-24,0,16)
@@ -406,50 +442,49 @@ fovLbl.TextColor3 = Color3.fromRGB(170,100,235)
 fovLbl.Font = Enum.Font.GothamSemibold
 fovLbl.TextSize = 13
 fovLbl.TextXAlignment = Enum.TextXAlignment.Left
-fovLbl.ZIndex = 13
+fovLbl.ZIndex = 43
 
 local track = Instance.new("Frame", win)
 track.Size = UDim2.new(1,-28,0,10)
 track.Position = UDim2.new(0,14,0,rowY + 28)
-track.BackgroundColor3 = Color3.fromRGB(40, 0, 78)
-track.BorderSizePixel = 0; track.ZIndex = 13
+track.BackgroundColor3 = Color3.fromRGB(40,0,78)
+track.BorderSizePixel = 0; track.ZIndex = 43
 Instance.new("UICorner", track).CornerRadius = UDim.new(1,0)
 
 local tfill = Instance.new("Frame", track)
 tfill.Size = UDim2.new(CFG.AimFOV/300,0,1,0)
 tfill.BackgroundColor3 = Color3.fromRGB(150,50,255)
-tfill.BorderSizePixel = 0; tfill.ZIndex = 14
+tfill.BorderSizePixel = 0; tfill.ZIndex = 44
 Instance.new("UICorner", tfill).CornerRadius = UDim.new(1,0)
 
 local thandle = Instance.new("TextButton", track)
-thandle.Size = UDim2.new(0,32,0,32)
+thandle.Size = UDim2.new(0,34,0,34)
 thandle.AnchorPoint = Vector2.new(0.5,0.5)
 thandle.Position = UDim2.new(CFG.AimFOV/300,0,0.5,0)
 thandle.BackgroundColor3 = Color3.fromRGB(190,90,255)
-thandle.Text = ""; thandle.BorderSizePixel = 0; thandle.ZIndex = 15
+thandle.Text = ""; thandle.BorderSizePixel = 0; thandle.ZIndex = 45
 Instance.new("UICorner", thandle).CornerRadius = UDim.new(1,0)
-local ths = Instance.new("UIStroke", thandle)
-ths.Color = Color3.fromRGB(230,170,255); ths.Thickness = 1.5
 
-local slideDragging = false
+local slideDrag = false
 thandle.InputBegan:Connect(function(i)
-    if i.UserInputType == Enum.UserInputType.Touch then slideDragging = true end
+    if i.UserInputType == Enum.UserInputType.Touch then slideDrag = true end
 end)
 UserInputService.InputEnded:Connect(function(i)
-    if i.UserInputType == Enum.UserInputType.Touch then slideDragging = false end
+    if i.UserInputType == Enum.UserInputType.Touch then slideDrag = false end
 end)
-UserInputService.TouchMoved:Connect(function(touch)
-    if not slideDragging then return end
+UserInputService.TouchMoved:Connect(function(t)
+    if not slideDrag then return end
     local abs = track.AbsolutePosition
     local sz  = track.AbsoluteSize
-    local pct = math.clamp((touch.Position.X - abs.X) / sz.X, 0, 1)
+    local pct = math.clamp((t.Position.X - abs.X) / sz.X, 0, 1)
     CFG.AimFOV = math.floor(pct * 300)
-    tfill.Size = UDim2.new(pct, 0, 1, 0)
-    thandle.Position = UDim2.new(pct, 0, 0.5, 0)
+    tfill.Size = UDim2.new(pct,0,1,0)
+    thandle.Position = UDim2.new(pct,0,0.5,0)
     fovLbl.Text = "Aim FOV  •  " .. CFG.AimFOV
     ring.Size = UDim2.new(0, CFG.AimFOV*2, 0, CFG.AimFOV*2)
 end)
 
+-- smooth slider
 local rowYs = rowY + 72
 local sLbl = Instance.new("TextLabel", win)
 sLbl.Text = "Aim Smooth  •  " .. string.format("%.2f", CFG.AimSmooth)
@@ -460,43 +495,41 @@ sLbl.TextColor3 = Color3.fromRGB(170,100,235)
 sLbl.Font = Enum.Font.GothamSemibold
 sLbl.TextSize = 13
 sLbl.TextXAlignment = Enum.TextXAlignment.Left
-sLbl.ZIndex = 13
+sLbl.ZIndex = 43
 
 local sTrack = Instance.new("Frame", win)
 sTrack.Size = UDim2.new(1,-28,0,10)
 sTrack.Position = UDim2.new(0,14,0,rowYs + 22)
 sTrack.BackgroundColor3 = Color3.fromRGB(40,0,78)
-sTrack.BorderSizePixel = 0; sTrack.ZIndex = 13
+sTrack.BorderSizePixel = 0; sTrack.ZIndex = 43
 Instance.new("UICorner", sTrack).CornerRadius = UDim.new(1,0)
 
 local sFill = Instance.new("Frame", sTrack)
 sFill.Size = UDim2.new(CFG.AimSmooth,0,1,0)
 sFill.BackgroundColor3 = Color3.fromRGB(150,50,255)
-sFill.BorderSizePixel = 0; sFill.ZIndex = 14
+sFill.BorderSizePixel = 0; sFill.ZIndex = 44
 Instance.new("UICorner", sFill).CornerRadius = UDim.new(1,0)
 
 local sHandle = Instance.new("TextButton", sTrack)
-sHandle.Size = UDim2.new(0,32,0,32)
+sHandle.Size = UDim2.new(0,34,0,34)
 sHandle.AnchorPoint = Vector2.new(0.5,0.5)
 sHandle.Position = UDim2.new(CFG.AimSmooth,0,0.5,0)
 sHandle.BackgroundColor3 = Color3.fromRGB(190,90,255)
-sHandle.Text = ""; sHandle.BorderSizePixel = 0; sHandle.ZIndex = 15
+sHandle.Text = ""; sHandle.BorderSizePixel = 0; sHandle.ZIndex = 45
 Instance.new("UICorner", sHandle).CornerRadius = UDim.new(1,0)
-local shs = Instance.new("UIStroke", sHandle)
-shs.Color = Color3.fromRGB(230,170,255); shs.Thickness = 1.5
 
-local sSliding = false
+local sDrag = false
 sHandle.InputBegan:Connect(function(i)
-    if i.UserInputType == Enum.UserInputType.Touch then sSliding = true end
+    if i.UserInputType == Enum.UserInputType.Touch then sDrag = true end
 end)
 UserInputService.InputEnded:Connect(function(i)
-    if i.UserInputType == Enum.UserInputType.Touch then sSliding = false end
+    if i.UserInputType == Enum.UserInputType.Touch then sDrag = false end
 end)
-UserInputService.TouchMoved:Connect(function(touch)
-    if not sSliding then return end
+UserInputService.TouchMoved:Connect(function(t)
+    if not sDrag then return end
     local abs = sTrack.AbsolutePosition
     local sz  = sTrack.AbsoluteSize
-    local pct = math.clamp((touch.Position.X - abs.X) / sz.X, 0, 1)
+    local pct = math.clamp((t.Position.X - abs.X) / sz.X, 0, 1)
     CFG.AimSmooth = math.floor(pct * 100) / 100
     sFill.Size = UDim2.new(pct,0,1,0)
     sHandle.Position = UDim2.new(pct,0,0.5,0)
@@ -511,14 +544,8 @@ hint.BackgroundTransparency = 1
 hint.TextColor3 = Color3.fromRGB(95,45,150)
 hint.Font = Enum.Font.Gotham
 hint.TextSize = 11
-hint.ZIndex = 13
+hint.ZIndex = 43
 
--- ╔══════════════════════════════════════════╗
--- ║  PASTE THE FULL SCRIPT HERE — END        ║
--- ╚══════════════════════════════════════════╝
+end) -- end pcall
 
-end)
-
-if not ok then
-    warn("[ollie_mod] error: " .. tostring(err))
-end
+if not ok then warn("[ollie] " .. tostring(err)) end
